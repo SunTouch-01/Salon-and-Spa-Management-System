@@ -4,26 +4,26 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon server.js",
+    "seed:customers": "node scripts/seedCustomersDummy.js",
+    "seed:bookable": "node scripts/seedBookableExperiences.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
+  "type": "commonjs",
   "dependencies": {
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
-    "body-parser": "^2.2.2",
-    "connect-mongo": "^6.0.0",
-    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "express-session": "^1.19.0",
-    "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.0.0",
     "mongoose": "^9.1.5",
     "nodemailer": "^8.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

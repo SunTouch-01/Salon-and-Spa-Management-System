@@ -1,0 +1,85 @@
+require("dotenv").config();
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+
+const app = express();
+
+// ---------------------
+// MIDDLEWARE
+const allowedOriginsFromEnv = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const defaultAllowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175"
+];
+
+const allowedOrigins = new Set([
+  ...defaultAllowedOrigins,
+  ...allowedOriginsFromEnv
+]);
+
+const localhostOriginPattern = /^http:\/\/localhost:\d+$/;
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow server-to-server and CLI tools (no Origin header)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.has(origin) || localhostOriginPattern.test(origin)) {
+      // Reflect the requesting origin so browser preflight gets ACAO header.
+      return callback(null, origin);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+
+app.use(express.json());
+
+// ---------------------
+// MONGODB CONNECTION
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected ✅"))
+  .catch(err => console.error("Mongo Error:", err));
+
+// ---------------------
+// TEST ROUTE
+app.get("/", (req, res) => {
+  res.send("Backend + MongoDB working ✅");
+});
+
+// ---------------------
+// ROUTES
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/adminProfile", require("./routes/adminProfileRoutes"));
+app.use("/api/staffAuth", require("./routes/staffAuth"));
+app.use("/api/staffProfile", require("./routes/staffProfile"));
+app.use("/api/dashboard", require("./routes/dashboardRoutes"));
+app.use("/api/manager-dashboard", require("./routes/managerDashboardRoutes"));
+app.use("/api/categories", require("./routes/categoryRoutes"));
+app.use("/api/services", require("./routes/serviceRoutes"));
+app.use("/api/salons", require("./routes/salonRoutes"));
+app.use("/api/staff", require("./routes/staffRoutes"));
+app.use("/api/plans", require("./routes/plansRoutes"));
+app.use("/api/appointments", require("./routes/appointmentRoutes"));
+app.use("/api/attendance", require("./routes/attendance"));
+app.use("/api/inventory", require("./routes/inventoryRoutes"));
+app.use("/api/expenses", require("./routes/expenseRoutes"));
+
+// ---------------------
+// SERVER START
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log("Plans routes loaded at /api/plans");
+});
