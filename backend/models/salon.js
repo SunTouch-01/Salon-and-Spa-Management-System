@@ -41,11 +41,27 @@ const salonSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Staff",
   }],
+  imageUrl: {
+    type: String,
+  },
   isActive: {
     type: Boolean,
     default: true,
   },
+  openTime: {
+    type: String,
+    default: "09:00",
+  },
+  closeTime: {
+    type: String,
+    default: "20:00",
+  },
+  workingDays: {
+    type: [String],
+    default: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+  },
 }, { timestamps: true });
+
 
 const Salon = mongoose.model("Salon", salonSchema);
 

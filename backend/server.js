@@ -15,8 +15,12 @@ import inventoryRoutes from "./routes/inventory.js";
 import expenseRoutes from "./routes/expense.js";
 import attendanceRoutes from "./routes/attendance.js"; // [NEW]
 import walkinRoutes from "./routes/walkin.js";
+import categoryRoutes from "./routes/category.js";
+import reportRoutes from "./routes/report.js"; // [NEW]
+import customerAuthRoutes from "./routes/customerAuth.js"; // [NEW]
 
 dotenv.config();
+
 
 const PORT = 5050;
 const app = express();
@@ -41,6 +45,10 @@ app.use("/inventory", inventoryRoutes);
 app.use("/expenses", expenseRoutes);
 app.use("/attendance", attendanceRoutes); // [NEW]
 app.use("/walkins", walkinRoutes);
+app.use("/categories", categoryRoutes);
+app.use("/reports", reportRoutes); // [NEW]
+app.use("/customer-auth", customerAuthRoutes); // [NEW]
+
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok", message: "Server is running" });

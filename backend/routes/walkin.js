@@ -6,11 +6,16 @@ import {
     deleteWalkin
 } from "../controllers/walkin.controller.js";
 
+import { authenticateToken, requireStaff } from "../middleware/auth.js";
+
 const router = express.Router();
 
-router.post("/", createWalkin);
-router.get("/", getWalkinsBySalon);
-router.put("/:id", updateWalkinStatus);
-router.delete("/:id", deleteWalkin);
+// Apply authentication to all walkin routes
+router.use(authenticateToken);
+
+router.post("/", requireStaff, createWalkin);
+router.get("/", requireStaff, getWalkinsBySalon);
+router.put("/:id", requireStaff, updateWalkinStatus);
+router.delete("/:id", requireStaff, deleteWalkin);
 
 export default router;

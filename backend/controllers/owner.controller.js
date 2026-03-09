@@ -10,6 +10,20 @@ export const updatePlan = async (req, res) => {
             return res.status(400).json({ message: "Plan name is required" });
         }
 
+        // Fetch the owner first to check demo plan usage and get current state
+        const owner = await Owner.findById(ownerId);
+        
+        if (!owner) {
+            return res.status(404).json({ message: "Owner not found" });
+        }
+
+        // Check if user is trying to select Demo Plan and has already used it
+        if (planName === 'Demo Plan' && owner.subscription && owner.subscription.hasUsedDemo) {
+            return res.status(403).json({ 
+                message: "You have already used the Demo Plan. Please select a paid plan to continue." 
+            });
+        }
+
         const updatedOwner = await Owner.findByIdAndUpdate(
             ownerId,
             {
@@ -20,12 +34,18 @@ export const updatePlan = async (req, res) => {
                         branchLimit: Number(branchLimit) || 1,
                         billingCycle: billingCycle || 'monthly',
                         startDate: new Date(),
-                        isActive: true
+                        isActive: true,
+                        // If it's the demo plan, set the trial dates and mark hasUsedDemo
+                        trialStartDate: planName === 'Demo Plan' ? new Date() : null,
+                        trialEndDate: planName === 'Demo Plan' ? new Date(new Date().getTime() + 60 * 1000) : null,
+                        // trialEndDate: planName === 'Demo Plan' ? new Date(new Date().getTime() + 14 * 24 * 60 * 60 * 1000) : null
+                        hasUsedDemo: planName === 'Demo Plan' ? true : (owner.subscription?.hasUsedDemo || false)
                     }
                 }
             },
             { new: true }
         ).select("-password");
+
 
         if (!updatedOwner) {
             return res.status(404).json({ message: "Owner not found" });

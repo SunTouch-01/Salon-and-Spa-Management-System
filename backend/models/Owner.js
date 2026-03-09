@@ -30,13 +30,17 @@ const ownerSchema = new mongoose.Schema({
         },
     ],
     subscription: {
-        planName: { type: String, default: 'Basic Care' },
+        planName: { type: String, default: null },
         price: { type: Number, default: 0 },
         branchLimit: { type: Number, default: 1 },
         billingCycle: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },
         startDate: { type: Date, default: Date.now },
-        isActive: { type: Boolean, default: true }
+        isActive: { type: Boolean, default: true },
+        trialStartDate: { type: Date, default: null },
+        trialEndDate: { type: Date, default: null },
+        hasUsedDemo: { type: Boolean, default: false }
     },
+
     avatarUrl: {
         type: String,
         default: null,

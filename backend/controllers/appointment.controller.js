@@ -2,10 +2,12 @@ import Appointment from "../models/Appointment.js";
 import mongoose from "mongoose";
 import Salon from "../models/Salon.js";
 import Staff from "../models/Staff.js";
+import Client from "../models/Client.js";
+import Payment from "../models/Payment.js";
 
 export const createAppointment = async (req, res) => {
     try {
-        const { salonId, serviceId } = req.body;
+        const { salonId, serviceId, clientName, clientMobile, price, staffId, date, category } = req.body;
 
         if (!salonId) {
             return res.status(400).json({ message: "Salon ID is required" });
@@ -16,28 +18,75 @@ export const createAppointment = async (req, res) => {
             return res.status(404).json({ message: "Salon not found" });
         }
 
-        // Get service price if serviceId is provided
-        let price = req.body.price;
-        if (serviceId && !price) {
-            // Only try to fetch from DB if serviceId is a valid ObjectId
-            if (mongoose.Types.ObjectId.isValid(serviceId)) {
-                const Service = mongoose.model('Service');
-                const service = await Service.findById(serviceId);
-                if (service) {
-                    price = service.price;
-                }
+        // Check staff availability if staff is selected
+        if (staffId && date) {
+            const appointmentDate = new Date(date);
+            
+            // Check if the date is in the past
+            if (appointmentDate < new Date()) {
+                return res.status(400).json({ message: "Cannot book appointments in the past" });
             }
-            // If serviceId is not a valid ObjectId (e.g., default services with string IDs), price should be provided in req.body.price
+
+            // Get the start and end of the selected hour (allow 1-hour slots)
+            const slotStart = new Date(appointmentDate);
+            slotStart.setMinutes(0, 0, 0);
+            const slotEnd = new Date(appointmentDate);
+            slotEnd.setMinutes(59, 59, 999);
+
+            // Check if staff has any active appointment at this time
+            const conflictingAppointment = await Appointment.findOne({
+                staffId: new mongoose.Types.ObjectId(staffId),
+                date: { $gte: slotStart, $lte: slotEnd },
+                status: { $in: ['pending', 'confirmed'] }
+            });
+
+            if (conflictingAppointment) {
+                return res.status(400).json({ 
+                    message: `This specialist is already booked at ${new Date(conflictingAppointment.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Please choose another time or specialist.`
+                });
+            }
+
+            // Also check if staff is on leave
+            const staff = await Staff.findById(staffId);
+            if (staff && staff.onLeave) {
+                return res.status(400).json({ message: "This specialist is currently on leave" });
+            }
+        }
+
+        // Find or create client
+        let client = await Client.findOne({ mobile: clientMobile, salonId });
+        if (!client) {
+            client = new Client({
+                salonId,
+                name: clientName,
+                mobile: clientMobile,
+                totalSpent: 0,
+                visits: 0
+            });
+            await client.save();
+            console.log('New client created:', client._id);
         }
 
         const appointment = new Appointment({
             ...req.body,
             ownerId: salon.ownerId,
-            price: price || 0
+            clientId: client._id,  // Save the clientId reference
+            price: price || 0,
+            category: category || 'online'  // Default to 'online' if not provided
         });
         await appointment.save();
+
+        console.log('Appointment created with clientId:', appointment.clientId);
+
+        // DON'T update visits here - only update when completed
+        // Remove these lines:
+        // client.visits += 1;
+        // client.lastVisit = new Date();
+        // await client.save();
+
         res.status(201).json(appointment);
     } catch (error) {
+        console.error('Create Appointment Error:', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -132,7 +181,9 @@ export const deleteAppointment = async (req, res) => {
 export const completeAppointment = async (req, res) => {
     try {
         const appointment = await Appointment.findById(req.params.id);
-        if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+        if (!appointment) {
+            return res.status(404).json({ message: "Appointment not found" });
+        }
 
         if (appointment.status === 'completed') {
             return res.status(400).json({ message: "Appointment already completed" });
@@ -143,30 +194,85 @@ export const completeAppointment = async (req, res) => {
         await appointment.save();
 
         // Create payment record
-        const Payment = mongoose.model('Payment');
         const payment = new Payment({
+            ownerId: appointment.ownerId,
             salonId: appointment.salonId,
             appointmentId: appointment._id,
             amount: appointment.price,
-            method: 'cash' // Default method, can be updated later
+            method: 'cash'
         });
         await payment.save();
 
         // Increment staff appointment count
         if (appointment.staffId) {
-            await mongoose.model('Staff').findByIdAndUpdate(
+            await Staff.findByIdAndUpdate(
                 appointment.staffId,
                 { $inc: { appointmentCount: 1 } }
             );
         }
 
-        res.status(200).json({ message: "Appointment completed successfully", appointment, payment });
+        // Update client total spent, visits, and last visit
+        let targetClientId = appointment.clientId;
+
+        console.log('Appointment clientId:', targetClientId);
+        console.log('Appointment clientMobile:', appointment.clientMobile);
+
+        // Fallback: if clientId is missing, find by mobile
+        if (!targetClientId && appointment.clientMobile) {
+            const client = await Client.findOne({
+                mobile: appointment.clientMobile,
+                salonId: appointment.salonId
+            });
+            if (client) {
+                targetClientId = client._id;
+                console.log('Found client by mobile:', targetClientId);
+
+                // Update the appointment with the found clientId for future reference
+                appointment.clientId = client._id;
+                await appointment.save();
+            } else {
+                console.log('No client found with mobile:', appointment.clientMobile);
+            }
+        }
+
+        if (targetClientId) {
+            const finalPrice = Number(appointment.price) || 0;
+            console.log(`Updating client ${targetClientId}: adding ${finalPrice} to totalSpent`);
+
+            // Use atomic $inc operation for safety
+            const updatedClient = await Client.findByIdAndUpdate(
+                targetClientId,
+                {
+                    $inc: {
+                        totalSpent: finalPrice,  // Add price to total
+                        visits: 1                // Increment visits
+                    },
+                    lastVisit: new Date()        // Update last visit date
+                },
+                { new: true }  // Return the updated document
+            );
+
+            if (updatedClient) {
+                console.log('✅ Client updated successfully!');
+                console.log('New totalSpent:', updatedClient.totalSpent);
+                console.log('New visits:', updatedClient.visits);
+            } else {
+                console.log('❌ Client not found with ID:', targetClientId);
+            }
+        } else {
+            console.log('⚠️ No targetClientId found - client will not be updated');
+        }
+
+        res.status(200).json({
+            message: "Appointment completed successfully",
+            appointment,
+            payment
+        });
     } catch (error) {
         console.error("Complete Appointment Error:", error);
         res.status(500).json({ message: error.message });
     }
 };
-
 export const getTodayStats = async (req, res) => {
     try {
         const { salonId } = req.query;
@@ -185,16 +291,17 @@ export const getTodayStats = async (req, res) => {
             if (salonId) filter.salonId = salonId;
         } else if (req.user) {
             // For staff (including receptionist), filter by their salon
-            if (salonId) {
-                filter.salonId = salonId;
-            } else {
-                const userStaff = await Staff.findById(req.user.id);
-                if (userStaff && userStaff.salonId) {
-                    filter.salonId = userStaff.salonId;
-                } else {
+            const userStaff = await Staff.findById(req.user.id);
+            if (userStaff && userStaff.salonId) {
+                if (salonId && salonId !== userStaff.salonId.toString()) {
                     return res.status(200).json({ customerCount: 0, revenue: 0 });
                 }
+                filter.salonId = userStaff.salonId;
+            } else {
+                return res.status(200).json({ customerCount: 0, revenue: 0 });
             }
+        } else {
+            return res.status(403).json({ message: "Access denied" });
         }
 
         // Get all appointments for today
@@ -212,7 +319,8 @@ export const getTodayStats = async (req, res) => {
 
         const payments = await Payment.find({
             appointmentId: { $in: completedAppointmentIds },
-            salonId: filter.salonId || appointments[0]?.salonId
+            ...(filter.salonId ? { salonId: filter.salonId } : {}),
+            ...(filter.ownerId ? { ownerId: filter.ownerId } : {})
         });
 
         const revenue = payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -233,8 +341,18 @@ export const getRevenueStats = async (req, res) => {
         if (req.user && req.user.role === 'owner') {
             matchFilter.ownerId = new mongoose.Types.ObjectId(req.user.id);
             if (salonId) matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
-        } else if (salonId) {
-            matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
+        } else if (req.user) {
+            const userStaff = await Staff.findById(req.user.id);
+            if (userStaff && userStaff.salonId) {
+                if (salonId && salonId !== userStaff.salonId.toString()) {
+                    return res.status(403).json({ message: "Access denied" });
+                }
+                matchFilter.salonId = userStaff.salonId;
+            } else {
+                return res.status(200).json({ revenueThisMonth: null, totalIncome: null, clients: null });
+            }
+        } else {
+            return res.status(403).json({ message: "Access denied" });
         }
 
         // Get data for the last 7 months
@@ -377,13 +495,18 @@ export const getDashboardStats = async (req, res) => {
         if (req.user && req.user.role === 'owner') {
             matchFilter.ownerId = new mongoose.Types.ObjectId(req.user.id);
             if (salonId) matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
-        } else if (salonId) {
-            matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
-        } else if (req.user) { // Staff fallback
+        } else if (req.user) { // Staff
             const userStaff = await Staff.findById(req.user.id);
             if (userStaff && userStaff.salonId) {
+                if (salonId && salonId !== userStaff.salonId.toString()) {
+                    return res.status(403).json({ message: "Access denied" });
+                }
                 matchFilter.salonId = userStaff.salonId;
+            } else {
+                return res.status(200).json({ totalEarnings: 0, lastWeekEarnings: 0, weeklyTrend: '0%', topServices: [] });
             }
+        } else {
+            return res.status(403).json({ message: "Access denied" });
         }
 
         // Total Earnings (All Time from payments)
@@ -426,7 +549,7 @@ export const getDashboardStats = async (req, res) => {
             {
                 $project: {
                     date: 1,
-                    price: { $ifNull: ['$service.price', 0] }
+                    price: { $ifNull: ['$price', 0] }
                 }
             }
         ]);
@@ -501,13 +624,18 @@ export const getEarningsPageData = async (req, res) => {
         if (req.user && req.user.role === 'owner') {
             matchFilter.ownerId = new mongoose.Types.ObjectId(req.user.id);
             if (salonId) matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
-        } else if (salonId) {
-            matchFilter.salonId = new mongoose.Types.ObjectId(salonId);
         } else if (req.user) {
             const userStaff = await Staff.findById(req.user.id);
             if (userStaff && userStaff.salonId) {
+                if (salonId && salonId !== userStaff.salonId.toString()) {
+                    return res.status(403).json({ message: "Access denied" });
+                }
                 matchFilter.salonId = userStaff.salonId;
+            } else {
+                return res.status(200).json({ thisMonth: 0, lastMonth: 0, totalYear: 0, pending: 0, recentEarnings: [] });
             }
+        } else {
+            return res.status(403).json({ message: "Access denied" });
         }
 
         const now = new Date();
@@ -570,7 +698,7 @@ export const getEarningsPageData = async (req, res) => {
             date: app.date,
             service: app.serviceId?.name || 'Service',
             client: app.clientName,
-            amount: app.serviceId?.price || 0,
+            amount: app.price || 0,
             status: 'Paid' // Completed implies paid for this context
         }));
 
@@ -585,5 +713,139 @@ export const getEarningsPageData = async (req, res) => {
     } catch (error) {
         console.error("Earnings Page Data Error:", error);
         res.status(500).json({ message: error.message });
+    }
+};
+
+// Check staff availability and time slot conflicts
+export const checkAvailability = async (req, res) => {
+    try {
+        const { salonId, staffId, date, excludeAppointmentId } = req.query;
+        
+        if (!salonId || !date) {
+            return res.status(400).json({ message: "Salon ID and date are required" });
+        }
+
+        const appointmentDate = new Date(date);
+        const startOfDay = new Date(appointmentDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(appointmentDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Build filter for appointments on the same day
+        let filter = {
+            salonId: new mongoose.Types.ObjectId(salonId),
+            date: { $gte: startOfDay, $lte: endOfDay },
+            status: { $in: ['pending', 'confirmed'] } // Only check active appointments
+        };
+
+        // If checking for specific staff, add to filter
+        if (staffId) {
+            filter.staffId = new mongoose.Types.ObjectId(staffId);
+        }
+
+        // Exclude current appointment when editing
+        if (excludeAppointmentId) {
+            filter._id = { $ne: new mongoose.Types.ObjectId(excludeAppointmentId) };
+        }
+
+        // Get all appointments for the day
+        const appointments = await Appointment.find(filter)
+            .populate('staffId', 'name')
+            .lean();
+
+        // Get all staff for the salon to check their availability status
+        const allStaff = await Staff.find({ 
+            salonId: new mongoose.Types.ObjectId(salonId),
+            isActive: true,
+            onLeave: false
+        }).select('_id name');
+
+        // Format booked time slots
+        const bookedSlots = appointments.map(app => ({
+            time: new Date(app.date).toISOString(),
+            staffId: app.staffId?._id?.toString(),
+            staffName: app.staffId?.name,
+            appointmentId: app._id
+        }));
+
+        res.status(200).json({
+            available: true,
+            bookedSlots,
+            availableStaff: allStaff.map(s => ({
+                _id: s._id,
+                name: s.name,
+                isAvailable: !appointments.some(app => 
+                    app.staffId?._id?.toString() === s._id.toString() &&
+                    new Date(app.date).getTime() === appointmentDate.getTime()
+                )
+            }))
+        });
+
+    } catch (error) {
+        console.error("Check Availability Error:", error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Public endpoint for clients to check staff availability (no auth required)
+export const checkStaffAvailability = async (req, res) => {
+    try {
+        const { staffId, date } = req.query;
+        
+        if (!staffId || !date) {
+            return res.status(400).json({ available: false, message: "Staff ID and date are required" });
+        }
+
+        const appointmentDate = new Date(date);
+        
+        // Check if the date is in the past
+        if (appointmentDate < new Date()) {
+            return res.status(200).json({ 
+                available: false, 
+                message: "Cannot book appointments in the past" 
+            });
+        }
+
+        // Get the start and end of the selected hour (allow 1-hour slots)
+        const slotStart = new Date(appointmentDate);
+        slotStart.setMinutes(0, 0, 0);
+        const slotEnd = new Date(appointmentDate);
+        slotEnd.setMinutes(59, 59, 999);
+
+        // Check if staff has any active appointment at this time
+        const conflictingAppointment = await Appointment.findOne({
+            staffId: new mongoose.Types.ObjectId(staffId),
+            date: { $gte: slotStart, $lte: slotEnd },
+            status: { $in: ['pending', 'confirmed'] }
+        }).populate('staffId', 'name');
+
+        if (conflictingAppointment) {
+            return res.status(200).json({ 
+                available: false, 
+                message: `This specialist is already booked at ${new Date(conflictingAppointment.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Please choose another time or specialist.`,
+                conflictingAppointment: {
+                    date: conflictingAppointment.date,
+                    clientName: conflictingAppointment.clientName
+                }
+            });
+        }
+
+        // Also check if staff is on leave
+        const staff = await Staff.findById(staffId);
+        if (staff && staff.onLeave) {
+            return res.status(200).json({ 
+                available: false, 
+                message: "This specialist is currently on leave" 
+            });
+        }
+
+        res.status(200).json({ 
+            available: true, 
+            message: "Staff is available at this time" 
+        });
+
+    } catch (error) {
+        console.error("Check Staff Availability Error:", error);
+        res.status(500).json({ available: false, message: error.message });
     }
 };

@@ -156,7 +156,10 @@ export const getProfile = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.status(200).json(user);
+        const userData = user.toObject();
+        userData.role = role;
+
+        res.status(200).json(userData);
     } catch (error) {
         console.error("Profile Error:", error);
         res.status(500).json({ message: "Internal Server Error" });

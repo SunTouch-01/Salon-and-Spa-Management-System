@@ -43,8 +43,11 @@ export const getSalons = async (req, res) => {
       filter.ownerId = ownerId;
     } else if (req.user && req.user.role === 'owner') {
       filter.ownerId = req.user.id;
+    } else {
+      // Public request - return all active salons for booking flow
+      const salons = await Salon.find(filter).populate('ownerId', 'name email');
+      return res.status(200).json(salons);
     }
-    // If no ownerId in query and no req.user (public), return all active salons
 
     const salons = await Salon.find(filter).populate('ownerId', 'name email');
     res.status(200).json(salons);

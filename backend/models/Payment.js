@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 
 const paymentSchema = new mongoose.Schema({
+    ownerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Owner",
+        required: true,
+    },
     salonId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Salon",
@@ -9,7 +14,12 @@ const paymentSchema = new mongoose.Schema({
     appointmentId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Appointment",
-        required: true,
+        required: false,
+    },
+    walkinId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Walkin",
+        required: false,
     },
     amount: {
         type: Number,

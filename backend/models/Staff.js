@@ -69,10 +69,33 @@ const staffSchema = new mongoose.Schema({
             'inventory', 'expenses', 'offers', 'reviews', 'receptionist', 'revenue-and-report'
         ],
     }],
+    services: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Service",
+    }],
     avatarUrl: {
         type: String,
         default: null,
     },
+    workingHours: [{
+        day: {
+            type: String,
+            enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+            required: true
+        },
+        startTime: {
+            type: String,
+            default: "09:00"
+        },
+        endTime: {
+            type: String,
+            default: "18:00"
+        },
+        isWorking: {
+            type: Boolean,
+            default: true
+        }
+    }],
 }, { timestamps: true });
 
 const Staff = mongoose.model("Staff", staffSchema);

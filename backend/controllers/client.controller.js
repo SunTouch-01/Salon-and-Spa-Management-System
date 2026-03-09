@@ -1,4 +1,6 @@
 import Client from "../models/Client.js";
+import Salon from "../models/Salon.js";
+import Staff from "../models/Staff.js";
 
 export const createClient = async (req, res) => {
     try {
@@ -13,7 +15,26 @@ export const createClient = async (req, res) => {
 export const getClients = async (req, res) => {
     try {
         const { salonId } = req.query;
-        const filter = salonId ? { salonId } : {};
+        let filter = {};
+
+        if (req.user && req.user.role === 'owner') {
+            if (salonId) {
+                const salon = await Salon.findOne({ _id: salonId, ownerId: req.user.id });
+                if (!salon) return res.status(403).json({ message: "Access denied" });
+                filter.salonId = salonId;
+            } else {
+                const salons = await Salon.find({ ownerId: req.user.id });
+                filter.salonId = { $in: salons.map(s => s._id) };
+            }
+        } else if (req.user) {
+            const staff = await Staff.findById(req.user.id);
+            if (!staff || !staff.salonId) return res.status(200).json([]);
+            if (salonId && salonId !== staff.salonId.toString()) {
+                return res.status(403).json({ message: "Access denied" });
+            }
+            filter.salonId = staff.salonId;
+        }
+
         const clients = await Client.find(filter).populate('salonId', 'name');
         res.status(200).json(clients);
     } catch (error) {
@@ -54,7 +75,22 @@ export const deleteClient = async (req, res) => {
 export const getClientStats = async (req, res) => {
     try {
         const { salonId } = req.query;
-        const filter = salonId ? { salonId } : {};
+        let filter = {};
+
+        if (req.user && req.user.role === 'owner') {
+            if (salonId) {
+                const salon = await Salon.findOne({ _id: salonId, ownerId: req.user.id });
+                if (!salon) return res.status(403).json({ message: "Access denied" });
+                filter.salonId = salonId;
+            } else {
+                const salons = await Salon.find({ ownerId: req.user.id });
+                filter.salonId = { $in: salons.map(s => s._id) };
+            }
+        } else if (req.user) {
+            const staff = await Staff.findById(req.user.id);
+            if (!staff || !staff.salonId) return res.status(200).json({ totalClients: 0, newThisMonth: 0, activeClients: 0, vipClients: 0 });
+            filter.salonId = staff.salonId;
+        }
 
         // Total clients
         const totalClients = await Client.countDocuments(filter);

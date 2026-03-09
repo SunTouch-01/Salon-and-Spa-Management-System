@@ -11,21 +11,27 @@ import { authenticateToken, requireOwner, requireStaff } from "../middleware/aut
 const router = express.Router();
 
 // Apply authentication to all offer routes
-router.use(authenticateToken);
+// Public routes
+router.get("/", getOffers);
+router.get("/:id", getOfferById);
+
+// Protected routes - require authentication
 
 // Create offer - only owners can create offers
-router.post("/", requireOwner, createOffer);
+router.post("/", authenticateToken, requireOwner, createOffer);
 
 // Get offers - both owners and staff can view offers
-router.get("/", requireStaff, getOffers);
+// Get offers - public access
+// router.get("/", requireStaff, getOffers); // Moved to public
 
 // Get offer by ID - both owners and staff can view offer details
-router.get("/:id", requireStaff, getOfferById);
+// Get offer by ID - public access
+// router.get("/:id", requireStaff, getOfferById); // Moved to public
 
 // Update offer - only owners can update offers
-router.put("/:id", requireOwner, updateOffer);
+router.put("/:id", authenticateToken, requireOwner, updateOffer);
 
 // Delete offer - only owners can delete offers
-router.delete("/:id", requireOwner, deleteOffer);
+router.delete("/:id", authenticateToken, requireOwner, deleteOffer);
 
 export default router;

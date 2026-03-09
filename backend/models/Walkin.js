@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 
 const walkinSchema = new mongoose.Schema({
+    ownerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Owner",
+        required: true,
+    },
     salonId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Salon",
@@ -16,12 +21,17 @@ const walkinSchema = new mongoose.Schema({
         default: "0000000000"
     },
     serviceId: {
-        type: String, // Supporting both real IDs and predefined IDs
+        type: String,
         required: false,
     },
     staffId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Staff",
+        required: false,
+    },
+    clientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Client",
         required: false,
     },
     price: {

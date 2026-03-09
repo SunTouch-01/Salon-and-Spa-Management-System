@@ -1,4 +1,6 @@
 import Inventory from "../models/Inventory.js";
+import Salon from "../models/Salon.js";
+import Staff from "../models/Staff.js";
 
 export const createInventoryItem = async (req, res) => {
     try {
@@ -14,7 +16,25 @@ export const getInventory = async (req, res) => {
     try {
         const { salonId, category } = req.query;
         let filter = {};
-        if (salonId) filter.salonId = salonId;
+
+        if (req.user && req.user.role === 'owner') {
+            if (salonId) {
+                const salon = await Salon.findOne({ _id: salonId, ownerId: req.user.id });
+                if (!salon) return res.status(403).json({ message: "Access denied" });
+                filter.salonId = salonId;
+            } else {
+                const salons = await Salon.find({ ownerId: req.user.id });
+                filter.salonId = { $in: salons.map(s => s._id) };
+            }
+        } else if (req.user) {
+            const staff = await Staff.findById(req.user.id);
+            if (!staff || !staff.salonId) return res.status(200).json([]);
+            if (salonId && salonId !== staff.salonId.toString()) {
+                return res.status(403).json({ message: "Access denied" });
+            }
+            filter.salonId = staff.salonId;
+        }
+
         if (category && category !== 'All') filter.category = category;
 
         const items = await Inventory.find(filter).populate('salonId', 'name');
@@ -73,7 +93,22 @@ export const restockItem = async (req, res) => {
 export const getInventoryStats = async (req, res) => {
     try {
         const { salonId } = req.query;
-        const filter = salonId ? { salonId } : {};
+        let filter = {};
+
+        if (req.user && req.user.role === 'owner') {
+            if (salonId) {
+                const salon = await Salon.findOne({ _id: salonId, ownerId: req.user.id });
+                if (!salon) return res.status(403).json({ message: "Access denied" });
+                filter.salonId = salonId;
+            } else {
+                const salons = await Salon.find({ ownerId: req.user.id });
+                filter.salonId = { $in: salons.map(s => s._id) };
+            }
+        } else if (req.user) {
+            const staff = await Staff.findById(req.user.id);
+            if (!staff || !staff.salonId) return res.status(200).json({ totalItems: 0, inStock: 0, lowStock: 0, outOfStock: 0 });
+            filter.salonId = staff.salonId;
+        }
 
         const totalItems = await Inventory.countDocuments(filter);
 

@@ -47,6 +47,9 @@ const offerSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
+    imageUrl: {
+        type: String,
+    },
 }, { timestamps: true });
 
 const Offer = mongoose.model("Offer", offerSchema);

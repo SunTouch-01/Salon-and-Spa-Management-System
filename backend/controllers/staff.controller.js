@@ -131,9 +131,10 @@ export const updateStaff = async (req, res) => {
             }
         }
 
-        const staff = await Staff.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const staff = await Staff.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('services');
         if (!staff) return res.status(404).json({ message: "Staff not found" });
         res.status(200).json(staff);
+
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
