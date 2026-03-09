@@ -1,4 +1,4 @@
-# ParthBuildersF
+# Soul Studio
 
 Monorepo for a salon management platform with:
 - `Backend` (Node.js + Express + MongoDB)
